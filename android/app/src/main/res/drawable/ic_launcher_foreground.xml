@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Two square speech bubbles, drawn for this app. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- theirs: tail up at the left -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M34,36 L34,30 L40,36 L64,36 L64,56 L34,56 Z" />
+    <!-- yours: tail down at the right, outlined -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3"
+        android:pathData="M46,62 L74,62 L74,80 L74,86 L68,80 L46,80 Z" />
+</vector>

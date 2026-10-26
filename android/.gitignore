@@ -1,0 +1,7 @@
+.gradle/
+.kotlin/
+build/
+local.properties
+*.iml
+# built from ../android/rcsmobile by build-go.ps1 / build-go.sh
+app/libs/
