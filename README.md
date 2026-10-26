@@ -1,5 +1,10 @@
 # prism-rcs
 
+> **This is a fork** of [mautrix/gmessages](https://github.com/mautrix/gmessages), published at
+> [github.com/winsontian254-dotcom/prism-rcs](https://github.com/winsontian254-dotcom/prism-rcs) under the
+> same AGPL-3.0 license. All credit for the Google Messages protocol library (`pkg/libgm`) goes to the
+> mautrix-gmessages developers; this fork adds the Android app in `android/`.
+
 An RCS-only Google Messages client for Android with a Windows Phone–style "Metro" look, made to
 open from Prism Launcher. It's a fork of [mautrix-gmessages](https://github.com/mautrix/gmessages)
 and uses its Go protocol library, `pkg/libgm`, which speaks the Google Messages for web protocol.
