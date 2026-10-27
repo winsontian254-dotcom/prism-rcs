@@ -183,8 +183,13 @@ class Repo(private val app: Application) {
     // ---- threads and messages ----
 
     fun refreshThreads() = scope.launch {
-        runCatching { Json.conversations(client.listConversations(100, true)) }
-            .onSuccess { list -> threads.value = list.filter { !it.archived }.sortedByDescending { it.timestamp } }
+        runCatching { Json.conversations(client.listConversations(100, false)) }
+            .onSuccess { all ->
+                // plain SMS/MMS threads belong to Prism's own Messaging app
+                val list = all.filter { it.isRcs && !it.archived }
+                Log.i(TAG, "threads: ${all.size} in the inbox, ${list.size} RCS")
+                threads.value = list.sortedByDescending { it.timestamp }
+            }
             .onFailure { note.value = "Couldn't load threads: ${it.message}" }
     }
 

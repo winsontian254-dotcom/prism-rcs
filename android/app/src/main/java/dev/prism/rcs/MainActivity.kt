@@ -27,8 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
-import dev.prism.rcs.ui.Accents
+import dev.prism.rcs.ui.Metro
+import dev.prism.rcs.ui.Style
 import dev.prism.rcs.ui.AppBar
 import dev.prism.rcs.ui.BarButton
 import dev.prism.rcs.ui.ConversationPage
@@ -49,28 +49,28 @@ import kotlinx.coroutines.delay
  */
 class MainActivity : ComponentActivity() {
     private var openConversation by mutableStateOf<String?>(null)
-    private var prismAccent by mutableStateOf<Color?>(null)
+    private var style by mutableStateOf(Style())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         noTransitions()
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge(SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
+        style = Style.load(this)
         readIntent(intent)
-        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
         setContent {
-            var picked by remember { mutableStateOf(prefs.getInt("accent", 0).takeIf { it != 0 }?.let { Color(it) }) }
-            val accent = picked ?: prismAccent ?: Accents[0].second
-            MetroProvider(accent) {
-                Box(Modifier.fillMaxSize().background(Color.Black)) {
+            val s = style
+            // the theme's own ground from the first frame, and status bar icons to match
+            LaunchedEffect(s.dark) {
+                val clear = android.graphics.Color.TRANSPARENT
+                val bars = if (s.dark) SystemBarStyle.dark(clear) else SystemBarStyle.light(clear, clear)
+                enableEdgeToEdge(bars, bars)
+                window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(if (s.dark) android.graphics.Color.BLACK else android.graphics.Color.WHITE))
+            }
+            MetroProvider(s) {
+                Box(Modifier.fillMaxSize().background(Metro.t.bg)) {
                     App(
                         repo = (application as RcsApp).repo,
-                        accent = accent,
                         openConversation = openConversation,
                         onOpened = { openConversation = null },
-                        onAccent = { c ->
-                            picked = c
-                            prefs.edit().putInt("accent", c?.toArgb() ?: 0).apply()
-                        },
                         onExit = { finish() },
                     )
                 }
@@ -92,7 +92,12 @@ class MainActivity : ComponentActivity() {
     private fun readIntent(intent: Intent?) {
         intent ?: return
         intent.getStringExtra(EXTRA_CONVERSATION_ID)?.let { openConversation = it }
-        if (intent.hasExtra(EXTRA_ACCENT)) prismAccent = Color(intent.getIntExtra(EXTRA_ACCENT, 0))
+        // Prism Launcher's look, handed over each time it opens this app
+        val next = style.with(intent)
+        if (next != style) {
+            style = next
+            Style.save(this, next)
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -107,7 +112,6 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val ACTION_OPEN = "dev.prism.rcs.OPEN"
         const val EXTRA_CONVERSATION_ID = "conversation_id"
-        const val EXTRA_ACCENT = "accent"
     }
 }
 
@@ -122,10 +126,8 @@ private sealed interface Page {
 @Composable
 private fun App(
     repo: Repo,
-    accent: Color,
     openConversation: String?,
     onOpened: () -> Unit,
-    onAccent: (Color?) -> Unit,
     onExit: () -> Unit,
 ) {
     val link by repo.link.collectAsState()
@@ -197,7 +199,7 @@ private fun App(
             }
         }
         Page.Settings -> SwingIn("settings") {
-            SettingsPage(accent, link == Link.Ready, onAccent, onUnlink = { repo.unlink(); stack.clear(); stack.add(Page.Threads) }, onBack = { back() })
+            SettingsPage(link == Link.Ready, onUnlink = { repo.unlink(); stack.clear(); stack.add(Page.Threads) }, onBack = { back() })
         }
     }
 }

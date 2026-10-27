@@ -51,7 +51,7 @@ fun ThreadsPage(
     typing: Set<String>,
     note: String?,
     connected: Boolean,
-    caps: String = "rcs chats",
+    caps: String = "RCS chats",
     heading: String = "threads",
     onOpen: (Conversation) -> Unit,
     bar: @Composable () -> Unit,
@@ -60,26 +60,26 @@ fun ThreadsPage(
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).statusBarsPadding().padding(horizontal = t.dp(24f))) {
             PageTitle(caps, heading)
-            if (note != null) MText(note, 18f, Modifier.padding(vertical = t.dp(4f)), color = t.accent.lighter(), maxLines = 3)
+            if (note != null) MText(note, 18f, Modifier.padding(vertical = t.dp(4f)), color = t.hot, maxLines = 3)
             Gap(10f)
             LazyColumn(Modifier.fillMaxSize()) {
                 if (threads.isEmpty()) item {
-                    MText(if (connected) "No RCS chats yet." else "loading…", 24f, color = t.subtle, weight = FontWeight.Light)
+                    MText(if (connected) "No RCS chats yet." else t.heading("loading…"), 24f, color = t.subtle, weight = FontWeight.Light)
                 }
                 items(threads, key = { it.id }) { th ->
                     val hot = th.unread
                     Row(Modifier.fillMaxWidth().press { onOpen(th) }.padding(vertical = t.dp(10f))) {
                         Column(Modifier.weight(1f)) {
-                            MText(th.title, 34f, color = if (hot) t.accent.lighter() else t.fg, weight = FontWeight.Light, maxLines = 1)
+                            MText(th.title, 34f, color = if (hot) t.hot else t.fg, weight = FontWeight.Light, maxLines = 1)
                             val line = when {
-                                th.id in typing -> "typing…"
+                                th.id in typing -> t.heading("typing…")
                                 th.isGroup && th.snippetFrom.isNotEmpty() && !th.fromMe -> "${th.snippetFrom}: ${th.snippet}"
                                 else -> th.snippet
                             }
-                            MText(line.replace('\n', ' '), 20f, color = if (th.id in typing) t.accent.lighter() else t.subtle, maxLines = 1)
+                            MText(line.replace('\n', ' '), 20f, color = if (th.id in typing) t.hot else t.subtle, maxLines = 1)
                         }
                         Gap(10f)
-                        MText(shortWhen(th.timestamp), 17f, Modifier.padding(top = t.dp(10f)), color = if (hot) t.accent.lighter() else t.fg)
+                        MText(shortWhen(th.timestamp), 17f, Modifier.padding(top = t.dp(10f)), color = if (hot) t.hot else t.fg)
                     }
                 }
                 item { Gap(40f) }

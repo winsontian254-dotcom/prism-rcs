@@ -38,7 +38,7 @@ fun IntroPage(note: String?, onSignIn: () -> Unit) {
         Column(
             Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = t.dp(24f)).verticalScroll(rememberScrollState()),
         ) {
-            PageTitle("rcs chats", "link")
+            PageTitle("RCS chats", "link")
             Gap(10f)
             MText(
                 "Your RCS chats from Google Messages, here. Sign in with the Google account on your phone, " +
@@ -56,7 +56,7 @@ fun IntroPage(note: String?, onSignIn: () -> Unit) {
             MButton("sign in to google", onClick = onSignIn)
             if (note != null) {
                 Gap(18f)
-                MText(note, 20f, color = t.accent.lighter(), lineHeight = 27f)
+                MText(note, 20f, color = t.hot, lineHeight = 27f)
             }
         }
     }
@@ -154,7 +154,7 @@ fun PairingPage(emoji: String?, onCancel: () -> Unit) {
     val t = Metro.t
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Column(Modifier.weight(1f).padding(horizontal = t.dp(24f))) {
-            PageTitle("rcs chats", "pair")
+            PageTitle("RCS chats", "pair")
             Gap(10f)
             if (emoji == null) {
                 MText("getting your phone…", 26f, color = t.subtle, weight = FontWeight.Light)
