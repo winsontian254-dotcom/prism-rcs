@@ -21,22 +21,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import dev.prism.rcs.BuildConfig
 
-/** Settings: where the look comes from, unlinking, and where the source code is (AGPL). */
+/** Once linked: where the chats show, unlinking, and where the source code is (AGPL). */
 @Composable
-fun SettingsPage(linked: Boolean, onUnlink: () -> Unit, onBack: () -> Unit) {
+fun SettingsPage(linked: Boolean, note: String?, onUnlink: () -> Unit, onBack: () -> Unit) {
     val t = Metro.t
     var confirm by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).statusBarsPadding().padding(horizontal = t.dp(24f)).verticalScroll(rememberScrollState())) {
-            PageTitle("RCS chats", "settings")
-            Gap(14f)
-            MText(t.heading("style"), 30f, weight = FontWeight.Light)
-            Gap(6f)
+            PageTitle("RCS chats", "linked")
+            Gap(10f)
             MText(
-                "The theme, accent colour, font, text size and Messaging design follow Prism Launcher's. " +
-                    "Change them there; they're picked up the next time Prism opens this app.",
-                18f, color = t.subtle, lineHeight = 25f,
+                "Your RCS chats show in Prism's Messaging, with your texts. This app only keeps the link to " +
+                    "Google Messages on your phone.",
+                22f, lineHeight = 30f,
             )
+            if (note != null) {
+                Gap(12f)
+                MText(note, 20f, color = t.hot, lineHeight = 27f)
+            }
             if (linked) {
                 Gap(24f)
                 MText(t.heading("linked account"), 30f, weight = FontWeight.Light)

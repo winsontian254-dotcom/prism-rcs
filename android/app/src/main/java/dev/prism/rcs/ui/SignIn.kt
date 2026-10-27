@@ -41,7 +41,7 @@ fun IntroPage(note: String?, onSignIn: () -> Unit) {
             PageTitle("RCS chats", "link")
             Gap(10f)
             MText(
-                "Your RCS chats from Google Messages, here. Sign in with the Google account on your phone, " +
+                "Shows your RCS chats from Google Messages in Prism's Messaging. Sign in with the Google account on your phone, " +
                     "then tap the matching emoji in Google Messages to link.",
                 22f, lineHeight = 30f,
             )

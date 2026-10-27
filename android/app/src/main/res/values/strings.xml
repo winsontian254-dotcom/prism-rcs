@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">RCS chats</string>
+    <string name="permission_chats_label">read and send your RCS chats</string>
+    <string name="permission_chats_description">See your RCS conversations from Google Messages and send, react to and delete messages in them.</string>
 </resources>

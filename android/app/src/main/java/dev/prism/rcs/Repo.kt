@@ -5,8 +5,6 @@
 package dev.prism.rcs
 
 import android.app.Application
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.util.Log
 import android.util.LruCache
 import dev.prism.rcs.go.rcsmobile.Client
@@ -19,7 +17,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 class RcsApp : Application() {
@@ -51,9 +48,15 @@ class Repo(private val app: Application) {
     val typing = MutableStateFlow<Map<String, Long>>(emptyMap())
     val connected = MutableStateFlow(false)
 
+    /** Called with "threads", "status" or "messages/<conversation ID>" whenever that changes. */
+    @Volatile var onChange: (String) -> Unit = {}
+
     private val messages = HashMap<String, MutableStateFlow<List<Message>>>()
     private val cursors = HashMap<String, String?>()
-    private val images = LruCache<String, Bitmap>(24)
+    /** Recently fetched attachments, up to 16 MB. */
+    private val images = object : LruCache<String, ByteArray>(16 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: ByteArray) = value.size
+    }
 
     private val listener = object : Listener {
         override fun onEvent(kind: String, json: String) {
@@ -71,6 +74,11 @@ class Repo(private val app: Application) {
 
     init {
         scope.launch { start() }
+        scope.launch { threads.collect { onChange("threads") } }
+        scope.launch { typing.collect { onChange("threads") } }
+        scope.launch { link.collect { onChange("status") } }
+        scope.launch { note.collect { onChange("status") } }
+        scope.launch { connected.collect { onChange("status") } }
     }
 
     private suspend fun start() {
@@ -195,8 +203,16 @@ class Repo(private val app: Application) {
 
     fun messages(convId: String): StateFlow<List<Message>> = synchronized(messages) {
         messages.getOrPut(convId) {
-            MutableStateFlow<List<Message>>(emptyList()).also { loadMore(convId, it) }
+            MutableStateFlow<List<Message>>(emptyList()).also { flow ->
+                loadMore(convId, flow)
+                scope.launch { flow.collect { onChange("messages/$convId") } }
+            }
         }
+    }
+
+    /** A loaded message, by its ID. */
+    fun message(id: String): Message? = synchronized(messages) {
+        messages.values.firstNotNullOfOrNull { flow -> flow.value.firstOrNull { it.id == id } }
     }
 
     private fun loadMore(convId: String, flow: MutableStateFlow<List<Message>>) = scope.launch {
@@ -273,13 +289,12 @@ class Repo(private val app: Application) {
         }
     }
 
-    /** An attachment's picture (the thumbnail when there is one), decoded and cached. */
-    suspend fun image(media: Media): Bitmap? = withContext(Dispatchers.IO) {
-        val id = media.thumbId.ifEmpty { media.mediaId }
-        images.get(id)?.let { return@withContext it }
-        val key = if (media.thumbId.isNotEmpty()) media.thumbKey else media.key
-        runCatching { client.downloadMedia(id, key) }.getOrNull()
-            ?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+    /** An attachment's bytes, decrypted (its thumbnail, with [thumb], where it has one). Blocks. */
+    fun mediaBytes(media: Media, thumb: Boolean): ByteArray? {
+        val useThumb = thumb && media.thumbId.isNotEmpty()
+        val id = if (useThumb) media.thumbId else media.mediaId
+        images.get(id)?.let { return it }
+        return runCatching { client.downloadMedia(id, if (useThumb) media.thumbKey else media.key) }.getOrNull()
             ?.also { images.put(id, it) }
     }
 

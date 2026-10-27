@@ -5,24 +5,27 @@
 > same AGPL-3.0 license. All credit for the Google Messages protocol library (`pkg/libgm`) goes to the
 > mautrix-gmessages developers; this fork adds the Android app in `android/`.
 
-An RCS-only Google Messages client for Android with a Windows Phone–style "Metro" look, made to
-open from Prism Launcher. It's a fork of [mautrix-gmessages](https://github.com/mautrix/gmessages)
-and uses its Go protocol library, `pkg/libgm`, which speaks the Google Messages for web protocol.
-The Android app lives in [`android/`](android/README.md).
+"RCS chats" is a small Android app that links to Google Messages on your phone and makes your RCS
+conversations available to other apps through a content provider, the way Android makes texts
+available through its SMS provider. It isn't a chat app of its own: Prism Launcher's Messaging
+reads the provider and shows the RCS chats alongside your texts. The app itself only has pages
+for linking, unlinking and its about page. It uses mautrix-gmessages' Go protocol library,
+`pkg/libgm`, which speaks the Google Messages for web protocol. See [`android/`](android/README.md).
 
 ## License: AGPL-3.0, source must be offered
 
 This repository, the Android app included, is licensed under the **GNU Affero General Public
 License v3.0** ([LICENSE](LICENSE)), the same as mautrix-gmessages. Anyone you give the app to
-must also be offered its complete corresponding source code. The app's settings → about page
-shows where; set `prismRcsSourceUrl` in [`android/gradle.properties`](android/gradle.properties)
-to your published copy of this repository before distributing an APK.
+must also be offered its complete corresponding source code. The app's about page shows where;
+set `prismRcsSourceUrl` in [`android/gradle.properties`](android/gradle.properties) to your
+published copy of this repository before distributing an APK.
 
 The special exceptions in [LICENSE.exceptions](LICENSE.exceptions) are granted by the
 mautrix-gmessages developers to Beeper and Element only. They don't apply to this fork.
 
 Prism Launcher / Prism XR is closed source and **must never include, link or bundle any code from
-this repository**. It only starts this app as a separate app, by intent (see below).
+this repository**. It talks to this app only as a separate program: it reads the documented
+provider (with the user's permission, like any other app could) and starts the app by intent.
 
 ## Things to know before using it
 
@@ -30,26 +33,27 @@ this repository**. It only starts this app as a separate app, by intent (see bel
   (SMS and MMS too, while linked) through Google's servers to this app.
 * **It's unofficial.** The protocol isn't public. Google can change or break it at any time, and
   using a third-party client goes against Google's terms.
-* **RCS only.** Plain SMS/MMS threads are hidden; Prism's own Messaging app handles those.
+* **RCS only.** Plain SMS/MMS threads are left out; Prism reads those from Android itself.
+* **Only while something's reading.** The link runs while an app holds the provider open (Prism's
+  Messaging does while it's showing). There are no notifications for new RCS messages yet.
 
-## Opening it from Prism Launcher
+## Using it from another app
 
-Start the activity by action, with the system's open animation turned off. The app also turns off
-its own transitions, so it appears in place like a page of the launcher:
+The provider, its permission and its actions are described in
+[android/README.md → Chats provider](android/README.md#chats-provider). To link or unlink, start
+the app by action, with the system's open animation off. The app also turns off its own
+transitions, so it looks like a page of the caller:
 
 ```kotlin
 val intent = Intent("dev.prism.rcs.OPEN")
     .setPackage("dev.prism.rcs")
     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-    // optional: open one thread, by its Google Messages conversation ID
-    // .putExtra("conversation_id", id)
-    // optional: use Prism's accent colour (ARGB Int) unless the user picked one in the app
-    // .putExtra("accent", accent.toArgb())
+    // optional "style.*" extras dress its pages in the caller's look (android/README.md)
 runCatching { context.startActivity(intent) }  // ActivityNotFoundException: not installed
 ```
 
-On Android 11+ Prism needs `<queries><package android:name="dev.prism.rcs" /></queries>` in its
-manifest to check whether the app is installed.
+The app has no app-list icon, so on Android 11+ a caller needs
+`<queries><package android:name="dev.prism.rcs" /></queries>` to see it.
 
 ## Upstream
 

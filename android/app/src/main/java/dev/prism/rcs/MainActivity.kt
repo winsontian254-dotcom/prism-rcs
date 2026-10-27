@@ -20,35 +20,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import dev.prism.rcs.ui.Metro
 import dev.prism.rcs.ui.Style
-import dev.prism.rcs.ui.AppBar
-import dev.prism.rcs.ui.BarButton
-import dev.prism.rcs.ui.ConversationPage
 import dev.prism.rcs.ui.GoogleSignInPage
-import dev.prism.rcs.ui.Icon
 import dev.prism.rcs.ui.IntroPage
 import dev.prism.rcs.ui.MetroProvider
 import dev.prism.rcs.ui.PairingPage
 import dev.prism.rcs.ui.SettingsPage
 import dev.prism.rcs.ui.SwingIn
-import dev.prism.rcs.ui.ThreadsPage
-import kotlinx.coroutines.delay
 
 /**
- * The one activity. Prism Launcher starts it with action [ACTION_OPEN] and
+ * The one activity, for linking and unlinking (the chats themselves are shown by Prism Launcher,
+ * through [ChatsProvider]). Prism starts it with action [ACTION_OPEN] and
  * Intent.FLAG_ACTIVITY_NO_ANIMATION; it also turns its own open and close transitions off, so it
  * appears in place like a page of the launcher.
  */
 class MainActivity : ComponentActivity() {
-    private var openConversation by mutableStateOf<String?>(null)
     private var style by mutableStateOf(Style())
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,12 +58,7 @@ class MainActivity : ComponentActivity() {
             }
             MetroProvider(s) {
                 Box(Modifier.fillMaxSize().background(Metro.t.bg)) {
-                    App(
-                        repo = (application as RcsApp).repo,
-                        openConversation = openConversation,
-                        onOpened = { openConversation = null },
-                        onExit = { finish() },
-                    )
+                    App(repo = (application as RcsApp).repo, onExit = { finish() })
                 }
             }
         }
@@ -91,7 +77,6 @@ class MainActivity : ComponentActivity() {
 
     private fun readIntent(intent: Intent?) {
         intent ?: return
-        intent.getStringExtra(EXTRA_CONVERSATION_ID)?.let { openConversation = it }
         // Prism Launcher's look, handed over each time it opens this app
         val next = style.with(intent)
         if (next != style) {
@@ -111,95 +96,38 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val ACTION_OPEN = "dev.prism.rcs.OPEN"
-        const val EXTRA_CONVERSATION_ID = "conversation_id"
     }
 }
 
 private sealed interface Page {
-    data object Threads : Page
-    data class Chat(val id: String) : Page
-    data class Forward(val text: String) : Page
-    data object Settings : Page
+    data object Home : Page
     data object SignIn : Page
 }
 
+/**
+ * Not linked: the intro, Google's sign-in, then the emoji to tap. Linked: the page saying where
+ * the chats show (Prism's Messaging), with unlinking and the about page.
+ */
 @Composable
-private fun App(
-    repo: Repo,
-    openConversation: String?,
-    onOpened: () -> Unit,
-    onExit: () -> Unit,
-) {
+private fun App(repo: Repo, onExit: () -> Unit) {
     val link by repo.link.collectAsState()
-    val threads by repo.threads.collectAsState()
     val note by repo.note.collectAsState()
-    val connected by repo.connected.collectAsState()
-    val typingMap by repo.typing.collectAsState()
-    // typing indicators run out on their own
-    val now by produceState(System.currentTimeMillis()) { while (true) { delay(1_000); value = System.currentTimeMillis() } }
-    val typing = typingMap.filterValues { it > now }.keys
-    val stack = remember { mutableStateListOf<Page>(Page.Threads) }
-    val page = stack.last()
-    fun open(p: Page) { stack.add(p) }
-    fun back() { if (stack.size > 1) stack.removeAt(stack.lastIndex) else onExit() }
+    var page by remember { mutableStateOf<Page>(Page.Home) }
+    BackHandler { if (page == Page.SignIn) page = Page.Home else onExit() }
 
-    // Prism asked for a thread: open it once linked
-    LaunchedEffect(openConversation, link) {
-        if (openConversation != null && link == Link.Ready) {
-            stack.clear(); stack.add(Page.Threads); stack.add(Page.Chat(openConversation))
-            onOpened()
-        }
-    }
-    BackHandler { back() }
-
-    // Not linked yet: the intro, Google's sign-in, then the emoji to tap.
-    if (link != Link.Ready && page != Page.Settings) {
-        when (val l = link) {
-            Link.Loading -> Box(Modifier.fillMaxSize())
-            is Link.Pairing -> SwingIn("pair") { PairingPage(l.emoji) { repo.cancelPairing() } }
-            else -> if (page == Page.SignIn) {
-                SwingIn("signin") {
-                    GoogleSignInPage(
-                        onCookies = { cookies -> stack.removeAt(stack.lastIndex); repo.pair(cookies) },
-                        onCancel = { back() },
-                    )
-                }
-            } else {
-                SwingIn("intro") { IntroPage(note) { open(Page.SignIn) } }
-            }
-        }
-        return
-    }
-
-    when (page) {
-        Page.Threads, Page.SignIn -> SwingIn("threads") {
-            ThreadsPage(threads, typing, note, connected, onOpen = { open(Page.Chat(it.id)) }) {
-                AppBar(
-                    buttons = listOf(
-                        BarButton(Icon.Refresh, "refresh") { repo.refreshThreads() },
-                        BarButton(Icon.Settings, "settings") { open(Page.Settings) },
-                    ),
-                    menu = listOf("unlink" to { open(Page.Settings) }),
+    when (val l = link) {
+        Link.Loading -> Box(Modifier.fillMaxSize())
+        is Link.Pairing -> SwingIn("pair") { PairingPage(l.emoji) { repo.cancelPairing() } }
+        Link.SignedOut -> if (page == Page.SignIn) {
+            SwingIn("signin") {
+                GoogleSignInPage(
+                    onCookies = { cookies -> page = Page.Home; repo.pair(cookies) },
+                    onCancel = { page = Page.Home },
                 )
             }
+        } else {
+            SwingIn("intro") { IntroPage(note) { page = Page.SignIn } }
         }
-        is Page.Chat -> {
-            val conv = threads.firstOrNull { it.id == page.id }
-            if (conv == null) Box(Modifier.fillMaxSize()) else SwingIn(page) {
-                ConversationPage(repo, conv, conv.id in typing, note, onForward = { open(Page.Forward(it)) }, onBack = { back() })
-            }
-        }
-        is Page.Forward -> SwingIn(page) {
-            ThreadsPage(threads, emptySet(), null, connected, caps = "forward to", heading = "threads", onOpen = { target ->
-                repo.sendText(target.id, page.text)
-                stack.removeAt(stack.lastIndex)
-                open(Page.Chat(target.id))
-            }) {
-                AppBar(buttons = listOf(BarButton(Icon.Close, "cancel") { back() }))
-            }
-        }
-        Page.Settings -> SwingIn("settings") {
-            SettingsPage(link == Link.Ready, onUnlink = { repo.unlink(); stack.clear(); stack.add(Page.Threads) }, onBack = { back() })
-        }
+        Link.Ready -> SwingIn("linked") { SettingsPage(linked = true, note = note, onUnlink = { repo.unlink() }, onBack = onExit) }
     }
 }
