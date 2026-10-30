@@ -2,5 +2,6 @@
 <resources>
     <string name="app_name">RCS chats</string>
     <string name="permission_chats_label">read and send your RCS chats</string>
-    <string name="permission_chats_description">See your RCS conversations from Google Messages and send, react to and delete messages in them.</string>
+    <!-- Android shows it as "Allow <app> to …?": lower case, no full stop -->
+    <string name="permission_chats_description">see your RCS chats from Google Messages and send, react to and delete messages in them</string>
 </resources>

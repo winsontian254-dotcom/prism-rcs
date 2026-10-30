@@ -11,8 +11,10 @@ android {
         applicationId = "dev.prism.rcs"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // Prism Launcher carries a build of this app and installs or updates it when its version
+        // is newer than the one on the phone: raise versionCode with every build handed to Prism
+        versionCode = 2
+        versionName = "0.2.0"
         val sourceUrl = providers.gradleProperty("prismRcsSourceUrl").getOrElse("")
         buildConfigField("String", "SOURCE_URL", "\"$sourceUrl\"")
         ndk {
@@ -21,9 +23,24 @@ android {
         }
     }
 
+    buildTypes {
+        // The build Prism Launcher carries (bundle-into-prism.ps1). Signed with this machine's debug
+        // key for now: every build handed out must use the same key, or it can't update itself.
+        release {
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    // the Go library is most of the app: keep it compressed in the APK
+    packaging {
+        jniLibs.useLegacyPackaging = true
     }
 
     compileOptions {
