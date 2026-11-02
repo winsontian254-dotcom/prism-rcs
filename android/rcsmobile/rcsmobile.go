@@ -29,14 +29,15 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exhttp"
 
 	"go.mau.fi/mautrix-gmessages/pkg/libgm"
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/events"
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
+	"go.mau.fi/mautrix-gmessages/pkg/libgm/util"
 )
 
 // Listener receives events from the client. Kind is one of:
@@ -64,6 +65,8 @@ type Client struct {
 
 	convLock sync.RWMutex
 	convs    map[string]*gmproto.Conversation
+	// The phone's SIMs, by their participant ID, from its settings.
+	sims map[string]*gmproto.SIMCard
 
 	pairLock   sync.Mutex
 	pairSess   *libgm.PairingSession
@@ -320,6 +323,16 @@ func (c *Client) handleEvent(rawEvt any) {
 		c.emit("error", errorPayload{evt.Error.Error()})
 	case *events.PingFailed:
 		c.emit("error", errorPayload{evt.Error.Error()})
+	case *gmproto.Settings:
+		if evt.GetSIMCards() != nil {
+			sims := make(map[string]*gmproto.SIMCard, len(evt.GetSIMCards()))
+			for _, sim := range evt.GetSIMCards() {
+				sims[sim.GetSIMParticipant().GetID()] = sim
+			}
+			c.convLock.Lock()
+			c.sims = sims
+			c.convLock.Unlock()
+		}
 	case *gmproto.Conversation:
 		c.cacheConversation(evt)
 		c.emit("conversation", convertConversation(evt))
@@ -414,12 +427,25 @@ func (c *Client) FetchMessages(convID string, count int64, cursorJSON string) (s
 	return marshal(page)
 }
 
-func (c *Client) newSendRequest(ctx context.Context, convID, replyTo string) (*gmproto.SendMessageRequest, error) {
+// simPayload is the SIM a conversation sends from: the one the phone's settings list
+// for its outgoing participant, as the bridge finds it, or the conversation's own.
+func (c *Client) simPayload(conv *gmproto.Conversation) *gmproto.SIMPayload {
+	c.convLock.RLock()
+	defer c.convLock.RUnlock()
+	if sim, ok := c.sims[conv.GetDefaultOutgoingID()]; ok {
+		return sim.GetSIMData().GetSIMPayload()
+	}
+	return conv.GetSimCard().GetSIMData().GetSIMPayload()
+}
+
+func (c *Client) newSendRequest(ctx context.Context, convID, tmpID, replyTo string) (*gmproto.SendMessageRequest, error) {
 	conv, err := c.conversation(ctx, convID)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load conversation: %w", err)
 	}
-	tmpID := "tmp_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	if tmpID == "" {
+		tmpID = util.GenerateTmpID()
+	}
 	req := &gmproto.SendMessageRequest{
 		ConversationID: convID,
 		MessagePayload: &gmproto.MessagePayload{
@@ -428,7 +454,7 @@ func (c *Client) newSendRequest(ctx context.Context, convID, replyTo string) (*g
 			ParticipantID:  conv.GetDefaultOutgoingID(),
 			TmpID2:         tmpID,
 		},
-		SIMPayload: conv.GetSimCard().GetSIMData().GetSIMPayload(),
+		SIMPayload: c.simPayload(conv),
 		TmpID:      tmpID,
 	}
 	if replyTo != "" {
@@ -437,24 +463,57 @@ func (c *Client) newSendRequest(ctx context.Context, convID, replyTo string) (*g
 	return req, nil
 }
 
+var sendRetryBackoff = []time.Duration{3 * time.Second, 8 * time.Second, 20 * time.Second}
+
+func isTransientSendFailure(status gmproto.SendMessageResponse_Status) bool {
+	return status == gmproto.SendMessageResponse_FAILURE_2 || status == gmproto.SendMessageResponse_FAILURE_3
+}
+
+func sendFailure(resp *gmproto.SendMessageResponse) error {
+	switch resp.GetStatus() {
+	case gmproto.SendMessageResponse_FAILURE_2, gmproto.SendMessageResponse_FAILURE_3:
+		return errors.New("Google Messages on your phone couldn't send it, please try again")
+	case gmproto.SendMessageResponse_FAILURE_4:
+		return errors.New("Google Messages isn't your default SMS app, so it can't send")
+	}
+	if strings.ContainsRune(resp.GetGoogleAccountSwitch().GetAccount(), '@') {
+		return errors.New("Google Messages on your phone is using another account: link RCS chats again")
+	}
+	return errors.New("Google Messages on your phone rejected the message: check you can send from it, or link RCS chats again")
+}
+
+// send hands a message to the phone, retrying when the phone reports a temporary
+// failure, as the bridge does.
 func (c *Client) send(ctx context.Context, req *gmproto.SendMessageRequest) (string, error) {
 	resp, err := c.cli.SendMessage(ctx, req)
-	if err != nil {
+	for attempt := 0; err == nil && isTransientSendFailure(resp.GetStatus()) && attempt < len(sendRetryBackoff); attempt++ {
+		c.log.Warn().Str("response_status", resp.GetStatus().String()).Int("attempt", attempt+1).
+			Msg("Phone rejected message send with transient status, retrying")
+		time.Sleep(sendRetryBackoff[attempt])
+		resp, err = c.cli.SendMessage(ctx, req)
+	}
+	if errors.Is(err, libgm.ErrPhoneNotResponding) {
+		// The server accepted it, so the phone may still send it when it's back
+		// online: it stays "sending" until the phone reports the real message.
+		c.log.Warn().Msg("Phone didn't respond to message send, it may still go out")
+		return req.TmpID, nil
+	} else if err != nil {
 		return "", err
 	} else if resp.GetStatus() != gmproto.SendMessageResponse_SUCCESS {
-		return "", fmt.Errorf("your phone couldn't send the message (%s)", resp.GetStatus())
+		c.log.Warn().Str("response_status", resp.GetStatus().String()).Msg("Phone rejected message send")
+		return "", sendFailure(resp)
 	}
 	return req.TmpID, nil
 }
 
-// SendText sends a text message and returns its temporary ID. The real message
-// arrives later as a "message" event carrying the same tmpId.
-func (c *Client) SendText(convID, text, replyTo string) (string, error) {
+// SendText sends a text message under tmpID (a new one when empty) and returns it.
+// The real message arrives later as a "message" event carrying the same tmpId.
+func (c *Client) SendText(convID, text, replyTo, tmpID string) (string, error) {
 	if err := c.requireLogin(); err != nil {
 		return "", err
 	}
 	ctx := c.ctx()
-	req, err := c.newSendRequest(ctx, convID, replyTo)
+	req, err := c.newSendRequest(ctx, convID, tmpID, replyTo)
 	if err != nil {
 		return "", err
 	}
@@ -470,7 +529,7 @@ func (c *Client) SendMedia(convID string, data []byte, fileName, mime, caption s
 		return "", err
 	}
 	ctx := c.ctx()
-	req, err := c.newSendRequest(ctx, convID, "")
+	req, err := c.newSendRequest(ctx, convID, "", "")
 	if err != nil {
 		return "", err
 	}
@@ -520,7 +579,7 @@ func (c *Client) React(convID, messageID, emoji string, replace, remove bool) er
 		Action:       action,
 	}
 	if conv, err := c.conversation(ctx, convID); err == nil {
-		req.SIMPayload = conv.GetSimCard().GetSIMData().GetSIMPayload()
+		req.SIMPayload = c.simPayload(conv)
 	}
 	resp, err := c.cli.SendReaction(ctx, req)
 	if err != nil {
@@ -541,7 +600,7 @@ func (c *Client) SetTyping(convID string) error {
 	if err != nil {
 		return err
 	}
-	return c.cli.SetTyping(ctx, convID, conv.GetSimCard().GetSIMData().GetSIMPayload())
+	return c.cli.SetTyping(ctx, convID, c.simPayload(conv))
 }
 
 // MarkRead sends a read receipt up to the given message.

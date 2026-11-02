@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.util.UUID
 
 class RcsApp : Application() {
     val repo by lazy { Repo(this) }
@@ -231,17 +232,21 @@ class Repo(private val app: Application) {
 
     fun sendText(convId: String, text: String) {
         val flow = messages(convId) as MutableStateFlow
+        // shown at once, replaced when the phone reports the real message under the same ID
+        val tmp = UUID.randomUUID().toString()
+        val placeholder = Message(
+            "pending:$tmp", convId, tmp, System.currentTimeMillis(), true, "", text,
+            emptyList(), "", false, false, emptyList(), pending = true,
+        )
+        flow.update { it + placeholder }
+        note.value = null
         scope.launch {
-            runCatching { client.sendText(convId, text, "") }
-                .onSuccess { tmp ->
-                    // shown at once, replaced when the phone reports the real message
-                    val placeholder = Message(
-                        "pending:$tmp", convId, tmp, System.currentTimeMillis(), true, "", text,
-                        emptyList(), "", false, false, emptyList(), pending = true,
-                    )
-                    flow.update { list -> if (list.any { it.tmpId == tmp }) list else list + placeholder }
+            runCatching { client.sendText(convId, text, "", tmp) }
+                .onFailure { e ->
+                    Log.w(TAG, "Send failed: ${e.message}")
+                    flow.update { list -> list.map { if (it.tmpId == tmp && it.pending) it.copy(failed = true) else it } }
+                    note.value = "Not sent: ${e.message}"
                 }
-                .onFailure { note.value = "Not sent: ${it.message}" }
         }
     }
 

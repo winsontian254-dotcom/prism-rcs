@@ -13,8 +13,8 @@ android {
         targetSdk = 36
         // Prism Launcher carries a build of this app and installs or updates it when its version
         // is newer than the one on the phone: raise versionCode with every build handed to Prism
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
         val sourceUrl = providers.gradleProperty("prismRcsSourceUrl").getOrElse("")
         buildConfigField("String", "SOURCE_URL", "\"$sourceUrl\"")
         ndk {
