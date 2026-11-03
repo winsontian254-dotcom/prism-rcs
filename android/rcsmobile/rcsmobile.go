@@ -188,6 +188,8 @@ func pairingStartError(err error) error {
 	switch {
 	case errors.Is(err, libgm.ErrNoDevicesFound):
 		return errors.New("no phone found: open Google Messages on your phone with this Google account and turn on device pairing")
+	case errors.Is(err, libgm.ErrPhoneInactive):
+		return errors.New("Google Messages on your phone hasn't connected to this Google account lately: open it, tap your profile picture, then Device pairing, check it's the same account and try again")
 	case errors.Is(err, libgm.ErrPairingInitTimeout):
 		return errors.New("your phone didn't respond: open Google Messages on it and try again")
 	case errors.Is(err, events.ErrCallerNoPermission):

@@ -9,7 +9,7 @@ if (-not $env:ANDROID_NDK_HOME) {
 New-Item -ItemType Directory -Force "$PSScriptRoot\app\libs" | Out-Null
 Push-Location "$PSScriptRoot\rcsmobile"
 try {
-    gomobile bind -target=android/arm64,android/amd64 -androidapi 29 -javapkg dev.prism.rcs.go `
+    gomobile bind "-target=android/arm64,android/amd64" -androidapi 29 -javapkg dev.prism.rcs.go `
         -o "$PSScriptRoot\app\libs\rcsmobile.aar" .
 } finally {
     Pop-Location
